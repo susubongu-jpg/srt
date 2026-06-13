@@ -1,4 +1,4 @@
 fastapi
 uvicorn[standard]
-git+https://github.com/ryanking13/SRT.git
+git+https://github.com/ryanking13/SRT.git@v0.3.2
 httpx
