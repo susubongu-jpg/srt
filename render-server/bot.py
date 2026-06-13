@@ -51,7 +51,7 @@ class BotSession:
         return now_mins >= end_mins
 
     async def run(self):
-        from srt import SRT
+        from SRT import SRT
 
         self._running = True
         self.status = "logging_in"
@@ -86,7 +86,7 @@ class BotSession:
 
             try:
                 trains = await asyncio.to_thread(
-                    srt_client.search_train,
+                    _client.search_train,
                     s["depStation"],
                     s["arrStation"],
                     date,
