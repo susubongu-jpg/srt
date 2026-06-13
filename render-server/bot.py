@@ -2,7 +2,6 @@ import asyncio
 import concurrent.futures
 import time
 from datetime import datetime
-import httpx
 
 sessions: dict = {}
 
@@ -114,19 +113,6 @@ class BotSession:
                         self.status = "success"
                         self._running = False
                         self._log("예약 완료!")
-
-                        if s.get("telegramToken") and s.get("telegramChatId"):
-                            self._send_telegram_sync(
-                                s["telegramToken"],
-                                s["telegramChatId"],
-                                (
-                                   f"SRT 예약 완료!\n"
-                                    f"{s['depStation']} → {s['arrStation']}\n"
-                                    f"출발: {dep_str[:2]}:{dep_str[2:4]}\n"
-                                    f"도착: {arr_str[:2]}:{arr_str[2:4]}"
-                                ),
-                            )
-                            self._log("텔레그램 알림 전송 완료")
                         break
                     except Exception as e:
                         self._log(f"예약 시도 실패: {e}")
@@ -149,18 +135,6 @@ class BotSession:
 
             if self._running:
                 time.sleep(interval_sec)
-
-    def _send_telegram_sync(self, token: str, chat_id: str, message: str):
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        try:
-            with httpx.Client() as client:
-                client.post(
-                    url,
-                    json={"chat_id": chat_id, "text": message},
-                    timeout=10,
-                )
-        except Exception:
-            pass
 
 
     async def run(self):
