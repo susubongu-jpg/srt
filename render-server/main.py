@@ -16,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class StartRequest(BaseModel):
     userId: str
     password: str
@@ -27,7 +28,7 @@ class StartRequest(BaseModel):
     endTime: str = "23"
     endMinute: str = "50"
     intervalMs: str = "1000"
-
+    fcmToken: str = ""
 
 @app.get("/health")
 async def health():
@@ -58,3 +59,4 @@ async def get_status(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session.get_status()
+
