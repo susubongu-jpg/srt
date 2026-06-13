@@ -51,13 +51,14 @@ class BotSession:
         return now_mins >= end_mins
 
     async def run(self):
-        from SRT import SRT
+        from SRT import SRT, SeatType
 
         self._running = True
         self.status = "logging_in"
         s = self.settings
 
         dep_time = str(s["depTime"]).zfill(2) + str(s["depMinute"]).zfill(2) + "00"
+        end_time = str(s["endTime"]).zfill(2) + str(s["endMinute"]).zfill(2) + "00"
         date = s["date"].replace("-", "")
         interval_sec = max(0.5, int(s.get("intervalMs", 1000)) / 1000)
 
@@ -91,6 +92,8 @@ class BotSession:
                     s["arrStation"],
                     date,
                     dep_time,
+                    end_time,                                                        
+                    available_only=True,  
                 )
 
 
@@ -98,10 +101,8 @@ class BotSession:
                 if self.attempt % 10 == 0:
                     self._log(f"{self.attempt}회 탐색 중...")
 
-                available = [t for t in trains if t.general_seat_available()]
-
-                if available:
-                    train = available[0]
+                if trains:                                                          
+                    train = trains[0]  
                     dep_str = _fmt_time(train.dep_time)
                     arr_str = _fmt_time(train.arr_time)
                     self.last_train = {"dptTm": dep_str, "arvTm": arr_str}
@@ -113,7 +114,7 @@ class BotSession:
 
 
                     try:
-                        await asyncio.to_thread(srt_client.reserve, train)
+                        await asyncio.to_thread(srt_client.reserve, train, special_seat=SeatType.GENERAL_ONLY)
                         self.status = "success"
                         self._running = False
                         self._log("예약 완료!")
