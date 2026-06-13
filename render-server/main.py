@@ -26,8 +26,6 @@ class StartRequest(BaseModel):
     depMinute: str
     endTime: str = "23"
     endMinute: str = "50"
-    telegramToken: str = ""
-    telegramChatId: str = ""
     intervalMs: str = "1000"
 
 
