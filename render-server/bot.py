@@ -1,6 +1,9 @@
 import asyncio
 import concurrent.futures
+import json
+import os
 import time
+import urllib.request
 from datetime import datetime
 
 sessions: dict = {}
@@ -14,7 +17,6 @@ def _fmt_time(t) -> str:
     s = str(t).replace(":", "").replace(" ", "")
     digits = "".join(c for c in s if c.isdigit())
     return digits[-6:] if len(digits) >= 6 else digits
-
 
 
 class BotSession:
@@ -60,8 +62,6 @@ class BotSession:
 
         self._log(f"로그인 시도 ({s['depStation']} → {s['arrStation']})")
 
-
-
         try:
             srt = SRT(s["userId"], s["password"])
             self._log("로그인 성공")
@@ -87,17 +87,16 @@ class BotSession:
                     s["arrStation"],
                     date,
                     dep_time,
-                    end_time,                                                        
-                    available_only=True,  
+                    end_time,
+                    available_only=True,
                 )
-
 
                 self.attempt += 1
                 if self.attempt % 10 == 0:
                     self._log(f"{self.attempt}회 탐색 중...")
-
-                if trains:                                                          
-                    train = trains[0]  
+    
+                if trains:
+                    train = trains[0]
                     dep_str = _fmt_time(train.dep_time)
                     arr_str = _fmt_time(train.arr_time)
                     self.last_train = {"dptTm": dep_str, "arvTm": arr_str}
@@ -106,17 +105,16 @@ class BotSession:
                         f"{dep_str[:2]}:{dep_str[2:4]} → {arr_str[:2]}:{arr_str[2:4]}"
                     )
 
-
-
                     try:
                         srt.reserve(train, special_seat=SeatType.GENERAL_ONLY)
                         self.status = "success"
                         self._running = False
                         self._log("예약 완료!")
+                        if s.get("fcmToken"):
+                            self._send_fcm_sync(s["fcmToken"], dep_str, arr_str)
                         break
                     except Exception as e:
                         self._log(f"예약 시도 실패: {e}")
-
 
             except Exception as e:
                 err = str(e)
@@ -132,10 +130,67 @@ class BotSession:
                         self._running = False
                         break
 
-
             if self._running:
                 time.sleep(interval_sec)
 
+    def _send_fcm_sync(self, fcm_token: str, dep_str: str, arr_str: str):
+        from google.oauth2 import service_account
+        import google.auth.transport.requests
+
+        sa_json = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "")
+        if not sa_json:
+            self._log("FCM_SERVICE_ACCOUNT_JSON 환경변수 미설정 — FCM 알림 생략")
+            return
+
+        try:
+            sa_info = json.loads(sa_json)
+            project_id = sa_info.get("project_id", "")
+            credentials = service_account.Credentials.from_service_account_info(
+                sa_info,
+                scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+            )
+            credentials.refresh(google.auth.transport.requests.Request())
+            access_token = credentials.token
+        except Exception as e:
+            self._log(f"FCM 인증 실패: {e}")
+            return
+
+        s = self.settings
+        dep_fmt = f"{dep_str[:2]}:{dep_str[2:4]}" if len(dep_str) >= 4 else ""
+        arr_fmt = f"{arr_str[:2]}:{arr_str[2:4]}" if len(arr_str) >= 4 else ""
+        body = f"{s['depStation']} → {s['arrStation']}"
+        if dep_fmt:
+            body += f"  출발 {dep_fmt} → 도착 {arr_fmt}"
+        body += "\n10분 내 SRT 앱에서 결제하세요!"
+
+        payload = json.dumps({
+            "message": {
+                "token": fcm_token,
+                "notification": {
+                    "title": "SRT 예약 완료!",
+                    "body": body,
+                },
+                "android": {
+                    "priority": "high",
+                    "notification": {"sound": "default"},
+                },
+            }
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            urllib.request.urlopen(req, timeout=10)
+            self._log("FCM 알림 전송 완료")
+        except Exception as e:
+            self._log(f"FCM 전송 실패: {e}")
 
     async def run(self):
         self._running = True
