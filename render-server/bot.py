@@ -1,4 +1,6 @@
 import asyncio
+import concurrent.futures
+import time
 from datetime import datetime
 import httpx
 
@@ -6,13 +8,11 @@ sessions: dict = {}
 
 
 def _fmt_time(t) -> str:
-    """SRTTrain.dep_time / arr_time -> 'HHMMSS' 문자열"""
     if t is None:
         return ""
     if hasattr(t, "strftime"):
         return t.strftime("%H%M%S")
     s = str(t).replace(":", "").replace(" ", "")
-    # "2021-01-01 120000" 같은 형식에서 숫자만 뒤 6자리
     digits = "".join(c for c in s if c.isdigit())
     return digits[-6:] if len(digits) >= 6 else digits
 
@@ -50,13 +50,10 @@ class BotSession:
         end_mins = int(self.settings["endTime"]) * 60 + int(self.settings["endMinute"])
         return now_mins >= end_mins
 
-    async def run(self):
+    def _run_sync(self):
         from SRT import SRT, SeatType
 
-        self._running = True
-        self.status = "logging_in"
         s = self.settings
-
         dep_time = str(s["depTime"]).zfill(2) + str(s["depMinute"]).zfill(2) + "00"
         end_time = str(s["endTime"]).zfill(2) + str(s["endMinute"]).zfill(2) + "00"
         date = s["date"].replace("-", "")
@@ -67,7 +64,7 @@ class BotSession:
 
 
         try:
-            srt_client = await asyncio.to_thread(SRT, s["userId"], s["password"])
+            srt = SRT(s["userId"], s["password"])
             self._log("로그인 성공")
             self.status = "running"
         except Exception as e:
@@ -86,8 +83,7 @@ class BotSession:
                 break
 
             try:
-                trains = await asyncio.to_thread(
-                    _client.search_train,
+                trains = srt.search_train(
                     s["depStation"],
                     s["arrStation"],
                     date,
@@ -114,13 +110,13 @@ class BotSession:
 
 
                     try:
-                        await asyncio.to_thread(srt_client.reserve, train, special_seat=SeatType.GENERAL_ONLY)
+                        srt.reserve(train, special_seat=SeatType.GENERAL_ONLY)
                         self.status = "success"
                         self._running = False
                         self._log("예약 완료!")
 
                         if s.get("telegramToken") and s.get("telegramChatId"):
-                            await self._send_telegram(
+                            self._send_telegram_sync(
                                 s["telegramToken"],
                                 s["telegramChatId"],
                                 (
@@ -142,9 +138,7 @@ class BotSession:
                 if "로그인" in err or "login" in err.lower() or "session" in err.lower():
                     self._log("세션 만료. 재로그인 시도...")
                     try:
-                        srt_client = await asyncio.to_thread(
-                            SRT, s["userId"], s["password"]
-                        )
+                        srt = SRT(s["userId"], s["password"])
                         self._log("재로그인 성공")
                     except Exception as le:
                         self._log(f"재로그인 실패: {le}")
@@ -154,16 +148,27 @@ class BotSession:
 
 
             if self._running:
-                await asyncio.sleep(interval_sec)
+                time.sleep(interval_sec)
 
-    async def _send_telegram(self, token: str, chat_id: str, message: str):
+    def _send_telegram_sync(self, token: str, chat_id: str, message: str):
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
+            with httpx.Client() as client:
+                client.post(
                     url,
                     json={"chat_id": chat_id, "text": message},
                     timeout=10,
                 )
         except Exception:
             pass
+
+
+    async def run(self):
+        self._running = True
+        self.status = "logging_in"
+        loop = asyncio.get_event_loop()
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            await loop.run_in_executor(executor, self._run_sync)
+        finally:
+            executor.shutdown(wait=False)
