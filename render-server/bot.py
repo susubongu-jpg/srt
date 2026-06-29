@@ -4,7 +4,9 @@ import json
 import os
 import time
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
 
 sessions: dict = {}
 
@@ -30,7 +32,7 @@ class BotSession:
         self._running = False
 
     def _log(self, msg: str):
-        ts = datetime.now().strftime("%H:%M:%S")
+        ts = datetime.now(KST).strftime("%H:%M:%S")       
         self.logs.insert(0, f"[{ts}] {msg}")
         self.logs = self.logs[:100]
 
@@ -46,7 +48,7 @@ class BotSession:
         }
 
     def _is_after_end_time(self) -> bool:
-        now = datetime.now()
+        now = datetime.now(KST)       
         now_mins = now.hour * 60 + now.minute
         end_mins = int(self.settings["endTime"]) * 60 + int(self.settings["endMinute"])
         return now_mins >= end_mins
