@@ -30,6 +30,7 @@ class BotSession:
         self.attempt = 0
         self.last_train = None
         self._running = False
+        self._end_datetime = None 
 
     def _log(self, msg: str):
         ts = datetime.now(KST).strftime("%H:%M:%S")       
@@ -48,10 +49,7 @@ class BotSession:
         }
 
     def _is_after_end_time(self) -> bool:
-        now = datetime.now(KST)       
-        now_mins = now.hour * 60 + now.minute
-        end_mins = int(self.settings["endTime"]) * 60 + int(self.settings["endMinute"])
-        return now_mins >= end_mins
+        return datetime.now(KST) >= self._end_datetime
 
     def _run_sync(self):
         from SRT import SRT, SeatType
@@ -61,6 +59,12 @@ class BotSession:
         end_time = str(s["endTime"]).zfill(2) + str(s["endMinute"]).zfill(2) + "00"
         date = s["date"].replace("-", "")
         interval_sec = max(0.5, int(s.get("intervalMs", 1000)) / 1000)
+
+        now = datetime.now(KST)
+        end_dt = now.replace(hour=int(s["endTime"]), minute=int(s["endMinute"]), second=0, microsecond=0)
+        if end_dt <= now:
+            end_dt += timedelta(days=1)
+        self._end_datetime = end_dt
 
         self._log(f"로그인 시도 ({s['depStation']} → {s['arrStation']})")
 
